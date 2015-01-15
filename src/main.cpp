@@ -1,5 +1,6 @@
 #include <iostream>
 #include <thread>
+#include <chrono>
 #include <atomic>
 #include <string>
 #include <iomanip>
@@ -94,15 +95,30 @@ int main() {
 	test_pattern.push_back(0xBA);
 	test_pattern.push_back(0xBE);
 
+	std::vector<uint8_t> p = test_pattern;
+	for (uint32_t i = 0; i < 30; i++) {
+		p.insert(p.end(), test_pattern.begin(), test_pattern.end());
+	}
+
+	std::cout << std::endl;
+	for (auto i : p) {
+		std::cout << " " << std::hex << std::setfill('0') << std::setw(2) << (int) i;
+	}
+	std::cout << std::endl;
+
 	boost::asio::io_service io_service;
+
 	auto port_a = Port(io_service, port_name_a);
 	auto port_b = Port(io_service, port_name_b);
 
 	port_b.echo();
-	port_a.send_test(test_pattern);
 
+	for (uint32_t i = 0; i < 1000; i++) {
+		port_a.send_test(p);
 
-//xxx set options
+		std::chrono::milliseconds dura(1000);
+		std::this_thread::sleep_for(dura);
+	}
 
 	return 0;
 }
