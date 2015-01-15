@@ -38,7 +38,7 @@ add_executable(serial-tester  ${SOURCES} )
 
 
 #### Linking
-target_link_libraries(main ${Boost_LIBRARIES} ${PSAPI_LIBRARIES} pthread)
+target_link_libraries(serial-tester ${Boost_LIBRARIES} ${PSAPI_LIBRARIES} pthread)
 
 
 	
