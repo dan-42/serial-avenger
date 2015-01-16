@@ -51,3 +51,9 @@ endif()
 #------------------------------------
 
 
+INSTALL(TARGETS serial-tester 
+    RUNTIME DESTINATION bin
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+)
+
