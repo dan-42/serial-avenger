@@ -6,16 +6,31 @@
 #include <iomanip>
 #include <memory>
 
+#include <sys/ioctl.h>
+#include <linux/serial.h>
+
 #include <boost/asio.hpp>
 #include <boost/bind.hpp>
 #include <boost/asio/steady_timer.hpp>
+
+void sendTest(const boost::system::error_code &ec);
 
 static const uint32_t DEFAULT_BAUD_RATE = 115200;
 static const auto DEFAULT_FLOW_CONTROL = boost::asio::serial_port_base::flow_control::none;
 static const auto DEFAULT_STOP_BITS = boost::asio::serial_port_base::stop_bits::one;
 static const auto DEFAULT_PARITY = boost::asio::serial_port_base::parity::even;
 
-uint32_t BUFFER_SIZE = 65000;
+static boost::asio::io_service io_service;
+static boost::asio::steady_timer timer(io_service);
+
+struct TestData {
+  std::size_t send_size = 0;
+  std::size_t rec_size = 0;
+  std::vector<uint8_t> send_data;
+  std::vector<uint8_t> rec_data;
+};
+
+typedef std::shared_ptr<TestData> TestDataPtr;
 
 class Port {
 
@@ -33,31 +48,52 @@ public:
     serial_port_.set_option(sb);
     serial_port_.set_option(p);
 
+    auto nativeHandler = serial_port_.lowest_layer().native_handle();
+
+    serial_rs485 rs485conf;
+
+    rs485conf.flags = (!SER_RS485_ENABLED) | (!SER_RS485_RTS_ON_SEND);
+
+    rs485conf.delay_rts_before_send = 0;
+    rs485conf.delay_rts_after_send = 0;
+
+    // set rs485 settings on given tty
+    if (ioctl(nativeHandler, TIOCSRS485, &rs485conf) < 0) {
+      std::cout << "SerialPort ioctl()  ERROR" << std::endl;
+    }
+
   }
 
   void echo() {
     std::cout << "echo()" << std::endl;
-    std::shared_ptr<std::vector<uint8_t> > buffer = std::make_shared < std::vector<uint8_t> > (BUFFER_SIZE);
+    std::shared_ptr<std::vector<uint8_t> > buffer = std::make_shared<std::vector<uint8_t> >(1);
 
-    serial_port_.async_read_some(boost::asio::buffer(*buffer),
+    serial_port_.async_read_some(boost::asio::buffer(*buffer, buffer->size()),
         boost::bind(&Port::handler_echo_read, this, buffer, boost::asio::placeholders::error, boost::asio::placeholders::bytes_transferred));
   }
 
-  void send_test(const std::vector<uint8_t>& test_patern) {
+  void send_test(const std::vector<uint8_t>& pattern) {
 
-    std::shared_ptr<std::vector<uint8_t> > buffer = std::make_shared < std::vector<uint8_t> > (BUFFER_SIZE);
-    serial_port_.async_write_some(boost::asio::buffer(*buffer),
-        boost::bind(&Port::handler_send_test, this, buffer, boost::asio::placeholders::error, boost::asio::placeholders::bytes_transferred));
+    TestDataPtr data = std::make_shared<TestData>();
+    data->send_data = std::vector<uint8_t>(pattern);
+
+    serial_port_.async_write_some(boost::asio::buffer(data->send_data, data->send_data.size()),
+        boost::bind(&Port::handler_send_test, this, data, boost::asio::placeholders::error, boost::asio::placeholders::bytes_transferred));
 
   }
 
 private:
 
-  void handler_echo_read(std::shared_ptr<std::vector<uint8_t> > buffer, const boost::system::error_code &ec, const std::size_t bytes_transferd) {
-    // std::cout << "handler_echo_read()" << std::endl;
+  void handler_echo_read(std::shared_ptr<std::vector<uint8_t> > buffer, const boost::system::error_code &ec, const std::size_t bytes_recived) {
     if (!ec) {
-      std::cout << "handler_echo_read() msg:" << ec.message() << std::endl;
-      serial_port_.async_write_some(boost::asio::buffer(*buffer, bytes_transferd),
+      std::cout << "handler_echo_read() msg:" << ec.message() << "\t bytes_read " << std::to_string(bytes_recived) << "\t";
+      for (int i = 0; i < bytes_recived; i++) {
+        int value = (int) (*buffer)[i];
+        std::cout << " " << std::hex << std::setfill('0') << std::setw(2) << value;
+      }
+      std::cout << std::endl;
+
+      serial_port_.async_write_some(boost::asio::buffer(*buffer, bytes_recived),
           boost::bind(&Port::handler_echo_write, this, buffer, boost::asio::placeholders::error, boost::asio::placeholders::bytes_transferred));
 
     }
@@ -68,19 +104,14 @@ private:
   }
 
   void handler_echo_write(std::shared_ptr<std::vector<uint8_t> > buffer, const boost::system::error_code &ec, const std::size_t bytes_transferd) {
-    // std::cout << "handler_echo_read()" << std::endl;
+
     if (!ec) {
 
-      std::cout << std::endl;
-      for (int i = 0; i < bytes_transferd; i++) {
-        int value = (int) (*buffer)[i];
-        std::cout << " " << std::hex << std::setfill('0') << std::setw(2) << value;
-      }
+      //buffer.reset();
+      //buffer = std::make_shared < std::vector<uint8_t> > (BUFFER_SIZE);
+      std::cout << "handler_echo_write() \t written " << std::to_string(bytes_transferd) << std::endl;
 
-      buffer.reset();
-      buffer = std::make_shared < std::vector<uint8_t> > (BUFFER_SIZE);
-
-      serial_port_.async_read_some(boost::asio::buffer(*buffer),
+      serial_port_.async_read_some(boost::asio::buffer(*buffer, buffer->size()),
           boost::bind(&Port::handler_echo_read, this, buffer, boost::asio::placeholders::error, boost::asio::placeholders::bytes_transferred));
     } else {
       std::cout << "handler_echo_write() " << ec.message() << std::endl;
@@ -88,59 +119,132 @@ private:
 
   }
 
-  void handler_send_test(std::shared_ptr<std::vector<uint8_t> > send_buffer, const boost::system::error_code &ec, const std::size_t bytes_transferd) {
+  void handler_send_test(TestDataPtr testData, const boost::system::error_code &ec, const std::size_t bytes_transferd) {
     if (!ec) {
-      std::shared_ptr<std::vector<uint8_t> > receive_buffer = std::make_shared < std::vector<uint8_t> > (BUFFER_SIZE);
+      testData->send_size = bytes_transferd;
+      std::cout << "handler_send_test(): bytes_send: \t" << std::to_string(bytes_transferd) << std::endl;
 
-      serial_port_.async_read_some(boost::asio::buffer(*receive_buffer, bytes_transferd),
-          boost::bind(&Port::handler_receive_test, this, send_buffer, bytes_transferd, receive_buffer, boost::asio::placeholders::error,
-              boost::asio::placeholders::bytes_transferred));
+      global_read_buffer = std::vector<uint8_t>(bytes_transferd);
 
+      ///*
+      serial_port_.async_read_some(boost::asio::buffer(global_read_buffer, bytes_transferd),
+          boost::bind(&Port::handler_read_all, this, testData, boost::asio::placeholders::error, boost::asio::placeholders::bytes_transferred));
+      //  */
+
+      /*
+       boost::asio::async_read(serial_port_, boost::asio::buffer(*receive_buffer, bytes_transferd),
+       boost::bind(&Port::handler_receive_test, this, send_buffer, bytes_transferd, receive_buffer, boost::asio::placeholders::error,
+       boost::asio::placeholders::bytes_transferred));
+       // */
     }
   }
 
-  void handler_receive_test(std::shared_ptr<std::vector<uint8_t> > send_buffer, std::size_t bytes_transfered,
-      std::shared_ptr<std::vector<uint8_t> > receive_buffer, const boost::system::error_code &ec, const std::size_t bytes_recived) {
+  void handler_read_all(TestDataPtr testData, const boost::system::error_code &ec, const std::size_t bytes_recived) {
+
     if (!ec) {
-      std::cout << std::endl;
-      for (auto i : (*send_buffer)) {
-        std::cout << " " << std::hex << std::setfill('0') << std::setw(2) << (int) i;
+      std::cout << "handler_read_all(): bytes_recived: \t" << std::to_string(bytes_recived) << std::endl;
+      testData->rec_size += bytes_recived;
+
+      for (int i = 0; i < bytes_recived; i++) {
+        testData->rec_data.push_back(global_read_buffer[i]);
       }
-      std::cout << std::endl;
-      for (auto i : (*receive_buffer)) {
-        std::cout << " " << std::hex << std::setfill('0') << std::setw(2) << (int) i;
+
+      if (testData->send_size > testData->rec_size) {
+        std::size_t missing = testData->send_size - testData->rec_size;
+
+        global_read_buffer = std::vector<uint8_t>(missing);
+        serial_port_.async_read_some(boost::asio::buffer(global_read_buffer, missing),
+            boost::bind(&Port::handler_read_all, this, testData, boost::asio::placeholders::error, boost::asio::placeholders::bytes_transferred));
+
+      } else {
+        handler_receive_test(testData);
       }
+
+    } else {
+      std::cout << "handler_read_all() " << ec.message() << std::endl;
+    }
+
+  }
+
+  void handler_receive_test(TestDataPtr testData) {
+
+    std::cout << "handler_receive_test()" << std::endl;
+    bool error = false;
+
+    if (testData->send_size != testData->rec_size) {
+
+      std::cout << "snd: \t" << std::to_string(testData->send_size) << std::endl;
+      std::cout << "rec: \t" << std::to_string(testData->rec_size) << std::endl;
+
+    }
+
+    for (int i = 0; i < testData->send_size; i++) {
+      uint8_t sendByte = testData->send_data[i];
+      uint8_t recivedByte = testData->rec_data[i];
+
+      if (sendByte != recivedByte || error) {
+        error = true;
+        std::cout << "snd: " << std::hex << std::setfill('0') << std::setw(2) << (int) sendByte;
+        std::cout << "\trec: " << std::hex << std::setfill('0') << std::setw(2) << (int) recivedByte;
+        std::cout << std::endl;
+      } else {
+
+      }
+    }
+    if (!error) {
+      std::cout << "OK ";
+      std::cout << "snd: " << std::to_string(testData->send_size);
+      std::cout << "\t rec: " << std::to_string(testData->rec_size) << std::endl;
       std::cout << std::endl;
+
+    } else {
+      std::cout << "ERROR ";
+      std::cout << "snd: " << std::to_string(testData->send_size);
+      std::cout << "\t rec: " << std::to_string(testData->rec_size) << std::endl;
       std::cout << std::endl;
     }
+
+    timer.expires_from_now(std::chrono::milliseconds(500));
+    timer.async_wait(sendTest);
 
   }
 
   boost::asio::serial_port serial_port_;
 
-}
-;
+  std::vector<uint8_t> global_read_buffer;
 
+};
+static std::vector<uint8_t> basic_pattern;      //6 bytes
+static std::vector<uint8_t> test_pattern;
 static Port* port;
-static std::vector<uint8_t> p;
-static boost::asio::io_service io_service;
-static boost::asio::steady_timer timer(io_service);
 
 void sendTest(const boost::system::error_code &ec) {
+
+  //apennd new testpatterm
+  for (int i = 0; i < 7; i++) {
+    int8_t v = test_pattern[test_pattern.size() - 1];
+    test_pattern.push_back((v - 1));
+  }
+
+  //test_pattern.insert(test_pattern.end(), basic_pattern.begin(), basic_pattern.end());
+
+  //if to long reset to basic size
+  if (test_pattern.size() > 250) {
+    test_pattern = basic_pattern;
+  }
+
   if (!ec && port != 0) {
-    port->send_test(p);
-    timer.expires_from_now(std::chrono::seconds(1));
-    timer.async_wait(sendTest);
+    port->send_test(test_pattern);
+
+  } else {
+    std::cout << "sendTest() " << ec.message() << std::endl;
   }
 
 }
 
 int main(int argc, char** argv) {
 
-  if (std::strcmp(argv[1], "echo") == 0 ) {
-
-    std::cout << argv[1] << std::endl;
-    std::cout << argv[2] << std::endl;
+  if (std::strcmp(argv[1], "echo") == 0) {
 
     std::string port_name_a(argv[2]);
     port = new Port(io_service, port_name_a);
@@ -151,17 +255,22 @@ int main(int argc, char** argv) {
     std::string port_name_a(argv[1]);
     port = new Port(io_service, port_name_a);
 
-    // 0xCAFEBABE
-    std::vector<uint8_t> test_pattern;
-    test_pattern.push_back(0xCA);
-    test_pattern.push_back(0xFE);
-    test_pattern.push_back(0xBA);
-    test_pattern.push_back(0xBE);
+    basic_pattern.push_back(0xFF);
+    basic_pattern.push_back(0xFE);
+    basic_pattern.push_back(0xFD);
+    basic_pattern.push_back(0xFC);
+    basic_pattern.push_back(0xFB);
+    basic_pattern.push_back(0xFA);
+    basic_pattern.push_back(0xF9);
 
-    std::vector<uint8_t> p = test_pattern;
-    for (uint32_t i = 0; i < 20; i++) {
-      p.insert(p.end(), test_pattern.begin(), test_pattern.end());
+    test_pattern.insert(test_pattern.end(), basic_pattern.begin(), basic_pattern.end());
+
+    std::cout << "send_test()" << std::endl;
+    std::cout << std::endl;
+    for (auto i : (test_pattern)) {
+      std::cout << " " << std::hex << std::setfill('0') << std::setw(2) << (int) i;
     }
+    std::cout << std::endl;
 
     timer.expires_from_now(std::chrono::seconds(1));
     timer.async_wait(sendTest);
