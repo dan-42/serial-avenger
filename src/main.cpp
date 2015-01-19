@@ -232,7 +232,7 @@ private:
       std::cout << std::endl;
     }
 
-    timer.expires_from_now(std::chrono::milliseconds(50));
+    timer.expires_from_now(std::chrono::milliseconds(10));
     timer.async_wait(sendTest);
 
   }
