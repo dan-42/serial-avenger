@@ -150,7 +150,7 @@ private:
   void handler_send_test(TestDataPtr testData, const boost::system::error_code &ec, const std::size_t bytes_transferd) {
     if (!ec) {
       testData->send_size = bytes_transferd;
-     // std::cout << "handler_send_test(): bytes_send: \t" << std::to_string(bytes_transferd) << std::endl;
+      std::cout << "handler_send_test(): bytes_send: \t" << std::to_string(bytes_transferd) << " waiting to receive " << std::to_string(bytes_transferd) << " bytes" << std::endl;
 
       global_read_buffer = std::vector<uint8_t>(bytes_transferd);
 
