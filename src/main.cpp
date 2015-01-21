@@ -81,34 +81,7 @@ public:
         boost::bind(&Port::handler_send_test, this, data, boost::asio::placeholders::error, boost::asio::placeholders::bytes_transferred));
 
   }
-  /*
 
-  void send_test_pattern(const std::vector<uint8_t>& pattern) {
-
-    serial_port_.async_write_some(boost::asio::buffer(pattern, pattern.size()),
-        boost::bind(&Port::handler_send_test_pattern, this, boost::asio::placeholders::error, boost::asio::placeholders::bytes_transferred));
-
-  }
-
-
-  void handler_send_test_pattern(const boost::system::error_code &ec, const std::size_t bytes_recived) {
-    if (!ec) {
-      std::cout << "handler_send_test_pattern send" << std::to_string(bytes_recived) << std::endl;
-      std::chrono::milliseconds dura(500);
-      std::this_thread::sleep_for(dura);
-
-      send_test_pattern (test_pattern);
-
-    } else {
-      std::cout << "handler_send_test_pattern() " << ec.message() << std::endl;
-    }
-
-  }
-
-  void rec_test_pattern(const std::vector<uint8_t>& pattern) {
-
-  }
-  */
 
 private:
 
@@ -284,35 +257,6 @@ int main(int argc, char** argv) {
     port->echo();
 
   }
-  /*
-  else if (std::strcmp(argv[1], "send") == 0) {
-
-    std::string port_name_a(argv[2]);
-    port = new Port(io_service, port_name_a);
-
-    test_pattern.push_back(0xFF);
-    for (int i = 0; i < 64; i++) {
-      int8_t v = test_pattern[test_pattern.size() - 1];
-      test_pattern.push_back((v - 1));
-    }
-
-    port->send_test_pattern(test_pattern);
-
-  } else if (std::strcmp(argv[1], "rec") == 0) {
-
-    std::string port_name_a(argv[2]);
-    port = new Port(io_service, port_name_a);
-
-    test_pattern.push_back(0xFF);
-    for (int i = 0; i < 64; i++) {
-      int8_t v = test_pattern[test_pattern.size() - 1];
-      test_pattern.push_back((v - 1));
-    }
-
-    port->rec_test_pattern(test_pattern);
-
-  }
-  // */
   else {
     std::string port_name_a(argv[1]);
     port = new Port(io_service, port_name_a);
