@@ -52,10 +52,10 @@ public:
 
     serial_rs485 rs485conf;
 
-    rs485conf.flags = (!SER_RS485_ENABLED) | (!SER_RS485_RTS_ON_SEND);
+    rs485conf.flags = (SER_RS485_ENABLED) | (SER_RS485_RTS_ON_SEND);
 
-    rs485conf.delay_rts_before_send = 0;
-    rs485conf.delay_rts_after_send = 0;
+    rs485conf.delay_rts_before_send = 5;
+    rs485conf.delay_rts_after_send = 5;
 
     // set rs485 settings on given tty
     if (ioctl(nativeHandler, TIOCSRS485, &rs485conf) < 0) {
@@ -150,7 +150,7 @@ private:
   void handler_send_test(TestDataPtr testData, const boost::system::error_code &ec, const std::size_t bytes_transferd) {
     if (!ec) {
       testData->send_size = bytes_transferd;
-      std::cout << "handler_send_test(): bytes_send: \t" << std::to_string(bytes_transferd) << std::endl;
+     // std::cout << "handler_send_test(): bytes_send: \t" << std::to_string(bytes_transferd) << std::endl;
 
       global_read_buffer = std::vector<uint8_t>(bytes_transferd);
 
@@ -170,7 +170,7 @@ private:
   void handler_read_all(TestDataPtr testData, const boost::system::error_code &ec, const std::size_t bytes_recived) {
 
     if (!ec) {
-      std::cout << "handler_read_all(): bytes_recived: \t" << std::to_string(bytes_recived) << std::endl;
+     // std::cout << "handler_read_all(): bytes_recived: \t" << std::to_string(bytes_recived) << std::endl;
       testData->rec_size += bytes_recived;
 
       for (int i = 0; i < bytes_recived; i++) {
@@ -196,7 +196,7 @@ private:
 
   void handler_receive_test(TestDataPtr testData) {
 
-    std::cout << "handler_receive_test()" << std::endl;
+   //std::cout << "handler_receive_test()" << std::endl;
     bool error = false;
 
     if (testData->send_size != testData->rec_size) {
@@ -225,15 +225,19 @@ private:
       std::cout << "\t rec: " << std::to_string(testData->rec_size) << std::endl;
       std::cout << std::endl;
 
+      timer.expires_from_now(std::chrono::milliseconds(25));
+      timer.async_wait(sendTest);
+
     } else {
       std::cout << "ERROR ";
       std::cout << "snd: " << std::to_string(testData->send_size);
       std::cout << "\t rec: " << std::to_string(testData->rec_size) << std::endl;
       std::cout << std::endl;
+
+      std::cout << "PROGRAMM STOPPED! ";
     }
 
-    timer.expires_from_now(std::chrono::milliseconds(10));
-    timer.async_wait(sendTest);
+
 
   }
 
