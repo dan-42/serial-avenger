@@ -53,9 +53,15 @@ public:
     auto nativeHandler = serial_port_.lowest_layer().native_handle();
 
     serial_rs485 rs485conf;
+
+    /*
     rs485conf.flags = (!SER_RS485_ENABLED) | (!SER_RS485_RTS_ON_SEND);
     rs485conf.delay_rts_before_send = 0;
     rs485conf.delay_rts_after_send = 0;
+    */
+    rs485conf.flags = (SER_RS485_ENABLED) | (SER_RS485_RTS_ON_SEND);
+    rs485conf.delay_rts_before_send = 1;
+    rs485conf.delay_rts_after_send = 1;
 
     // set rs485 settings on given tty
 
