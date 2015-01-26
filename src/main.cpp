@@ -8,6 +8,7 @@
 
 #include <sys/ioctl.h>
 #include <linux/serial.h>
+#include <termios.h>
 
 #include <boost/asio.hpp>
 #include <boost/bind.hpp>
@@ -48,19 +49,35 @@ public:
     serial_port_.set_option(sb);
     serial_port_.set_option(p);
 
+
     auto nativeHandler = serial_port_.lowest_layer().native_handle();
 
     serial_rs485 rs485conf;
-
-    rs485conf.flags = (SER_RS485_ENABLED) | (SER_RS485_RTS_ON_SEND);
-
-    rs485conf.delay_rts_before_send = 5;
-    rs485conf.delay_rts_after_send = 5;
+    rs485conf.flags = (!SER_RS485_ENABLED) | (!SER_RS485_RTS_ON_SEND);
+    rs485conf.delay_rts_before_send = 0;
+    rs485conf.delay_rts_after_send = 0;
 
     // set rs485 settings on given tty
+
     if (ioctl(nativeHandler, TIOCSRS485, &rs485conf) < 0) {
       std::cout << "SerialPort ioctl()  ERROR" << std::endl;
     }
+
+
+    /*
+    struct termios uartSettings;
+    memset(&uartSettings, 0, sizeof(uartSettings));
+    auto ret = tcgetattr(nativeHandler, &uartSettings);
+
+    //uartSettings.c_iflag = 0;
+    //uartSettings.c_oflag = 0;
+    //uartSettings.c_cflag = CS8 | CREAD | CLOCAL;           // 8n1, see termios.h for more information
+    //uartSettings.c_lflag = 0;
+    uartSettings.c_cc[VMIN] = 0; //min blocking read. Set to 0, so read is nonblocking.
+    uartSettings.c_cc[VTIME] = 1; //readtimeout, divide by 10 for seconds.
+    tcsetattr(nativeHandler,TCSANOW,&uartSettings);
+
+    // */
 
   }
 
@@ -81,7 +98,6 @@ public:
         boost::bind(&Port::handler_send_test, this, data, boost::asio::placeholders::error, boost::asio::placeholders::bytes_transferred));
 
   }
-
 
 private:
 
@@ -123,7 +139,8 @@ private:
   void handler_send_test(TestDataPtr testData, const boost::system::error_code &ec, const std::size_t bytes_transferd) {
     if (!ec) {
       testData->send_size = bytes_transferd;
-      std::cout << "handler_send_test(): bytes_send: \t" << std::to_string(bytes_transferd) << " waiting to receive " << std::to_string(bytes_transferd) << " bytes" << std::endl;
+      std::cout << "handler_send_test(): bytes_send: \t" << std::to_string(bytes_transferd) << " waiting to receive " << std::to_string(bytes_transferd)
+          << " bytes" << std::endl;
 
       global_read_buffer = std::vector<uint8_t>(bytes_transferd);
 
@@ -143,7 +160,7 @@ private:
   void handler_read_all(TestDataPtr testData, const boost::system::error_code &ec, const std::size_t bytes_recived) {
 
     if (!ec) {
-     // std::cout << "handler_read_all(): bytes_recived: \t" << std::to_string(bytes_recived) << std::endl;
+      // std::cout << "handler_read_all(): bytes_recived: \t" << std::to_string(bytes_recived) << std::endl;
       testData->rec_size += bytes_recived;
 
       for (int i = 0; i < bytes_recived; i++) {
@@ -169,7 +186,7 @@ private:
 
   void handler_receive_test(TestDataPtr testData) {
 
-   //std::cout << "handler_receive_test()" << std::endl;
+    //std::cout << "handler_receive_test()" << std::endl;
     bool error = false;
 
     if (testData->send_size != testData->rec_size) {
@@ -198,8 +215,12 @@ private:
       std::cout << "\t rec: " << std::to_string(testData->rec_size) << std::endl;
       std::cout << std::endl;
 
-      timer.expires_from_now(std::chrono::milliseconds(25));
-      timer.async_wait(sendTest);
+      //timer.expires_from_now(std::chrono::microseconds(250));
+      //timer.async_wait(sendTest);
+
+      boost::system::error_code ec(boost::system::errc::success, boost::system::system_category());
+      sendTest(ec);
+
 
     } else {
       std::cout << "ERROR ";
@@ -209,8 +230,6 @@ private:
 
       std::cout << "PROGRAMM STOPPED! ";
     }
-
-
 
   }
 
@@ -257,17 +276,17 @@ int main(int argc, char** argv) {
     port->echo();
 
   }
+
   else {
     std::string port_name_a(argv[1]);
     port = new Port(io_service, port_name_a);
 
     basic_pattern.push_back(0xFF);
-    basic_pattern.push_back(0xFE);
-    basic_pattern.push_back(0xFD);
-    basic_pattern.push_back(0xFC);
-    basic_pattern.push_back(0xFB);
-    basic_pattern.push_back(0xFA);
-    basic_pattern.push_back(0xF9);
+
+    for (int i = 0; i < 99; i++) {
+      int8_t v = basic_pattern[basic_pattern.size() - 1];
+      basic_pattern.push_back((v - 1));
+    }
 
     test_pattern.insert(test_pattern.end(), basic_pattern.begin(), basic_pattern.end());
 
